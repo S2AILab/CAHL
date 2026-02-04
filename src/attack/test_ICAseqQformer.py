@@ -7,9 +7,7 @@ from copy import deepcopy
 import numpy as np
 import csv
 import os
-os.environ["http_proxy"] = "http://127.0.0.1:7890"
-os.environ["https_proxy"] = "http://127.0.0.1:7890"
-# print("当前工作目录:", os.getcwd())
+
 import re
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

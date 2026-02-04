@@ -203,7 +203,8 @@ def _partial_tokenize_fn(llm_input_dict_i, tokenizer, ih_size=3, delimiter='text
     input_ids = labels = tokenized.input_ids[0]
     input_ids_lens = labels_lens = tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item()
 
-    # 这里在completion_real任务时，设置的max_length不能太小（因为completion_real攻击很长），太小的话input_ids会截断，而inst、inp没有截断，导致长度不符合断言
+    # For the completion_real task, max_length should not be too small (the attack can be very long).
+    # Otherwise input_ids will be truncated while inst/inp are not, which can break length assumptions.
     # assert len(input_ids) == inst_len + inp_len + 1
     ih_ids = torch.zeros_like(input_ids, dtype=torch.long)
     if ih_size == 3:

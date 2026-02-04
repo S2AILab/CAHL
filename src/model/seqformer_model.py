@@ -21,8 +21,8 @@ import torch.nn.functional as F
 
 class QformerCrossAttention(nn.Module):
     """
-    自定义 Cross-Attention，用于 (query=ih_query, key=inputs_embeds, value=inputs_embeds)，
-    并支持自定义 Qformer KV cache。
+    Custom cross-attention used with (query=ih_query, key=inputs_embeds, value=inputs_embeds),
+    with support for a custom Qformer KV cache.
     """
     def __init__(self, embed_dim: int, num_heads: int, layer_idx: int):
         super().__init__()
@@ -33,12 +33,12 @@ class QformerCrossAttention(nn.Module):
         if (self.head_dim * num_heads) != embed_dim:
             raise ValueError(f"embed_dim must be divisible by num_heads (got {embed_dim} and {num_heads}).")
 
-        # 投影矩阵: Q, K, V
+        # Projection matrices: Q, K, V
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=False)
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
 
-        # 输出投影
+        # Output projection
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
 
     def forward(
@@ -53,16 +53,16 @@ class QformerCrossAttention(nn.Module):
     ) -> Tuple[torch.Tensor, Optional[Cache]]:
         """
         Args:
-            query: 形如 [batch_size, seq_len_q, embed_dim]
-            key_value: 形如 [batch_size, seq_len_k, embed_dim]，cross-attention 的 K,V
-            attn_mask: 形如 [B * num_heads, seq_len_q, seq_len_k] 的布尔型mask，
-                       True=masked, False=可见
-            use_cache: 是否启用cache
-            Qformer_past_key_values: 如果启用cache，会在这里存/取 cross K,V
-            cache_key: 在 Qformer_past_key_values 中用于区分 cross-attention 的键名
+            query: Tensor shaped like [batch_size, seq_len_q, embed_dim].
+            key_value: Tensor shaped like [batch_size, seq_len_k, embed_dim], used as K,V for cross-attention.
+            attn_mask: Boolean mask shaped like [B * num_heads, seq_len_q, seq_len_k].
+                       True = masked, False = visible.
+            use_cache: Whether to enable caching.
+            Qformer_past_key_values: When caching is enabled, cross-attention K,V are stored/retrieved here.
+            cache_key: Key name used inside Qformer_past_key_values to distinguish cross-attention entries.
         Returns:
             attn_output: [batch_size, seq_len_q, embed_dim]
-            updated_Qformer_past_key_values: 更新后的 cache（若use_cache=True）
+            updated_Qformer_past_key_values: Updated cache (when use_cache=True).
         """
         if gradient_checkpointing and self.training and use_cache:
             logging.info(
@@ -83,7 +83,7 @@ class QformerCrossAttention(nn.Module):
                     "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
                 )
 
-        # 一、先把 Q, K, V 做线性映射
+        # 1) Project Q, K, V.
         bsz_q, len_q, _ = query.size()
         bsz_k, len_k, _ = key_value.size()
 
@@ -92,14 +92,14 @@ class QformerCrossAttention(nn.Module):
         k = self.k_proj(key_value)
         v = self.v_proj(key_value)
 
-        # 二、如果启用 cache，需要拼接历史 K,V, 三、把新的 k,v 存回 Qformer_past_key_values
-        #    假设 Qformer_past_key_values 是一个 Cache或dict，并在里面以 cache_key="cross" 存储
+        # 2) If caching is enabled, append past K,V; 3) store the new K,V back into Qformer_past_key_values.
+        #    We assume Qformer_past_key_values is a Cache/dict-like object.
         if Qformer_past_key_values is not None:
             cache_kwargs = {"cache_position": cache_position}
             k, v = Qformer_past_key_values.update(k, v, self.layer_idx, cache_kwargs)
 
 
-        # 四、重塑到多头形状: [bsz, seq_len, num_heads, head_dim] -> [bsz * num_heads, seq_len, head_dim]
+        # 4) Reshape into multi-head form: [bsz, seq_len, num_heads, head_dim] -> [bsz * num_heads, seq_len, head_dim]
         def shape_proj(x: torch.Tensor) -> torch.Tensor:
             bsz, seq_len, _ = x.size()
             x = x.reshape(bsz, seq_len, self.num_heads, self.head_dim)
@@ -111,20 +111,19 @@ class QformerCrossAttention(nn.Module):
         v_ = shape_proj(v)
         # print(q_.shape, k_.shape, v_.shape)
 
-        # 注意：attn_mask 形如 [bsz * num_heads, seq_len_q, seq_len_k]，与 q_,k_ batch 维度对齐即可。
-        # 若 attn_mask=None，也没问题。
+        # Note: attn_mask is shaped [bsz * num_heads, seq_len_q, seq_len_k] and must align with q_/k_ batch dimension.
+        # If attn_mask is None, that's also fine.
 
-        # 五、用 PyTorch 2.x 的原生 scaled_dot_product_attention
-        #    需要你在import时: from torch.nn.functional import scaled_dot_product_attention
+        # 5) Use PyTorch 2.x native scaled_dot_product_attention.
         attn_output_ = F.scaled_dot_product_attention(
             query=q_, key=k_, value=v_,
-            attn_mask=attn_mask,  # bool mask: True=要mask, scaled_dot_product_attention里会把True位置设为 -inf
-            dropout_p=0.0,        # 如果你需要dropout，可以自己加
-            # is_causal=True      # 我们用自定义mask，而不是默认的下三角
+            attn_mask=attn_mask,  # bool mask: True = masked; SDPA sets these positions to -inf
+            dropout_p=0.0,        # add dropout here if needed
+            # is_causal=True      # we use a custom mask instead of the default causal mask
         )
         # attn_output_: [bsz * num_heads, seq_len_q, head_dim]
 
-        # 六、再把多头合并回去: [bsz, seq_len_q, embed_dim]
+        # 6) Merge heads back: [bsz, seq_len_q, embed_dim]
         def merge_heads(x: torch.Tensor) -> torch.Tensor:
             bnh, sqlen, hdim = x.size()
             b = bnh // self.num_heads
@@ -132,10 +131,10 @@ class QformerCrossAttention(nn.Module):
             return x
 
         attn_output = merge_heads(attn_output_)
-        # 七、再做一个 out_proj
+        # 7) Final output projection.
         attn_output = self.out_proj(attn_output)
 
-        # 返回： (attn_output, updated_Qformer_past_key_values)
+        # Return: (attn_output, updated_Qformer_past_key_values)
         outputs = (attn_output,)
         if use_cache:
             if return_legacy_cache:
@@ -162,7 +161,7 @@ class QformerSelfAttention(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,       # [batch_size, seq_len, hidden_size], 既是Q，也是K,V
+        hidden_states: torch.Tensor,       # [batch_size, seq_len, hidden_size], used as Q as well as K,V
         attn_mask: Optional[torch.Tensor] = None,
         use_cache: bool = False,
         Qformer_past_key_values: Optional[Union[Cache, dict]] = None,
@@ -188,7 +187,7 @@ class QformerSelfAttention(nn.Module):
                     "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
                 )
 
-        # 1. Q,K,V
+        # 1) Q, K, V
         q = self.q_proj(hidden_states)
         k = self.k_proj(hidden_states)
         v = self.v_proj(hidden_states)
@@ -226,7 +225,7 @@ class QformerSelfAttention(nn.Module):
         attn_output = merge_heads(attn_output_)
         attn_output = self.out_proj(attn_output)
 
-        # 返回： (attn_output, updated_Qformer_past_key_values)
+        # Return: (attn_output, updated_Qformer_past_key_values)
         outputs = (attn_output,)
         if use_cache:
             if return_legacy_cache:
@@ -242,9 +241,9 @@ class QformerSelfAttention(nn.Module):
 @dataclass
 class QformerOutputWithPast(ModelOutput):
     """
-    增强的输出结构，用于在 forward 返回:
-      - Llama 的 past_key_values
-      - 我们自定义 Qformer 的 past_key_values
+        Extended output structure for forward() that returns:
+            - Llama past_key_values
+            - Our custom Qformer past_key_values
     """
     loss: Optional[torch.FloatTensor] = None
     logits: torch.FloatTensor = None
@@ -290,8 +289,7 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
 
     @classmethod
     def init_from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        # 不再对 self.cross_attention 做 init.normal_
-        # 而是对 self.cross_attention.q_proj / k_proj / v_proj / out_proj 等分别初始化
+        # Initialize cross/self attention projections explicitly.
         logger.warning("Loading base model %s for training" % pretrained_model_name_or_path)
         model = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         logger.warning("Initializing ise_emb")
@@ -331,40 +329,41 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
         **kwargs,
     ):
         """
-        新增了 Qformer_past_key_values，用于存储 cross/self attention 的增量KV。
+        Adds Qformer_past_key_values to store incremental KV for cross/self attention.
         """
-        # 1) gradient_checkpointing 与 use_cache 兼容性处理
+        # 1) Handle gradient_checkpointing vs use_cache compatibility.
         if gradient_checkpointing and self.training and use_cache:
             logger.warning_once(
                 "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
             )
             use_cache = False
 
-        # 2) 处理 Qformer_past_key_values 的“旧格式”兼容
+        # 2) Legacy-format compatibility for Qformer_past_key_values.
         return_legacy_cache = False
         if use_cache and not isinstance(Qformer_past_key_values, Cache) and Qformer_past_key_values is not None:
-            # 说明用户传了个 legacy tuple
+            # User provided a legacy tuple.
             return_legacy_cache = True
             Qformer_past_key_values = DynamicCache.from_legacy_cache(Qformer_past_key_values)
             logger.warning(
                 "Detected legacy Qformer_past_key_values format. Will convert to `DynamicCache` structure."
             )
         # print(ih_ids.shape, input_ids.shape)
-        # 3) 计算 ih_embed / ih_query 等
+        # 3) Compute ih_embed / ih_query etc.
         if ih_ids is not None:
             ih_embed = self.ise_emb(ih_ids)
             ih_query = self.ih_query(ih_ids)
             # print(ih_query.shape, ih_embed.shape)
             alpha = self.alpha_role[ih_ids]
 
-            # 默认优先用传入的 inputs_embeds，否则用 embed_tokens
+            # Prefer provided inputs_embeds; otherwise use embed_tokens.
             if inputs_embeds is None:
                 inputs_embeds = self.model.embed_tokens(input_ids)
 
-            # -- 这里保留你对 seg 分段mask 的构造逻辑 --
-            # 但需要注意SDPA的mask是跟MultiHeadAttention相反的，True表示参与注意力，False表示被屏蔽，因此应该将分段置为True，小心犯错
-            # (为简化演示，示例中不改这段。注意增量推理时，这种 B×L×L 大掩码若每步构造，会非常耗时。
-            #  可能需要更复杂的partial更新。此处就如原代码保留。)
+            # -- Keep your segment-wise mask construction logic here --
+            # Note: SDPA uses a boolean mask where True means "masked" (i.e., not attended).
+            # Be careful: this differs from some other attention implementations.
+            # (For simplicity we keep this logic unchanged. For incremental decoding, building a B×L×L mask
+            #  at every step can be expensive and may require a more sophisticated partial update strategy.)
             batch_size, seq_len = ih_ids.shape
             causal_mask = torch.zeros(
                 (batch_size, seq_len, seq_len), device=inputs_embeds.device, dtype=torch.bool
@@ -386,7 +385,7 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
 
             # print('causal_mask:', causal_mask)
 
-            # 4) 做 cross-attention: Q=ih_query, K=V=inputs_embeds
+            # 4) Cross-attention: Q=ih_query, K=V=inputs_embeds
             cross_attention_output, Qformer_past_key_values = self.cross_attention(
                 query=ih_query,
                 key_value=inputs_embeds,
@@ -406,7 +405,7 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
             # print(cross_attention_output.shape)
             '''
 
-            # 5) 做 self-attention: Q=K=V = cross_attention_output
+            # 5) Self-attention: Q=K=V=cross_attention_output
             self_attention_output, Qformer_past_key_values = self.self_attention(
                 hidden_states=cross_attention_output,
                 # attn_mask=causal_mask, #!!!
@@ -417,22 +416,22 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
             )
             # print(self_attention_output.shape)
 
-            # 6) 最终把这个 attention 输出添加到 inputs_embeds
+            # 6) Add the attention output into inputs_embeds.
             inputs_embeds = inputs_embeds + ih_embed + self_attention_output * alpha.unsqueeze(-1)
             # print(inputs_embeds.shape)
         else:
-            # 如果没有 ih_ids，就不做 Qformer cross/self attention
-            # 直接保留 inputs_embeds 或 embed_tokens
+            # If ih_ids is not provided, skip Qformer cross/self attention.
+            # Keep inputs_embeds or embed_tokens.
             if inputs_embeds is None:
                 inputs_embeds = self.model.embed_tokens(input_ids)
 
-        # 7) 调用 llama 主体，得到 hidden_states
-        #    注意: llama 本身也有 past_key_values (官方)
+        # 7) Run the Llama backbone to get hidden_states.
+        #    Note: Llama itself also has official past_key_values.
         outputs = self.model(
             input_ids=None,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            past_key_values=past_key_values,  # llama自己的cache
+            past_key_values=past_key_values,  # llama cache
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             output_attentions=output_attentions,
@@ -445,8 +444,8 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
         # hidden_states = outputs[0]
         hidden_states = outputs.last_hidden_state
 
-        # 只计算最后 num_logits_to_keep 个logits
-        # （若 =0，代表保留所有）
+        # Only compute the last logits_to_keep logits.
+        # (If = 0, keep all.)
         # logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
@@ -456,12 +455,11 @@ class LlamaICAQformerForCausalLM(LlamaForCausalLM, GenerationMixinForQformer):
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
 
         if not return_dict:
-            # 兼容旧格式输出
+            # Backward-compatible tuple output.
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        # 8) 使用我们自定义的 QformerOutputWithPast
-        #    把 llama 的 past_key_values + 新的 Qformer_past_key_values 都返回
+        # 8) Use QformerOutputWithPast and return both Llama and Qformer caches.
         return QformerOutputWithPast(
             loss=loss,
             logits=logits,

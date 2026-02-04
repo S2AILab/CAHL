@@ -131,30 +131,30 @@ class LayerTrainer(Trainer):
         Setup the optimizer, allowing different LR for different parts of the model.
         We also keep the special logic for bitsandbytes (Adam8bit) and sagemaker mp.
         """
-        # 0. 仅当 self.optimizer 尚未创建时才进行创建
+        # 0) Only create the optimizer if it hasn't been created yet.
         if self.optimizer is not None:
             return self.optimizer
 
-        # 1. 获取底层的模型 (兼容 sagemaker mp)
+        # 1) Get the underlying model (SageMaker MP compatible).
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
 
-        # 2. 获取所有需要 weight decay 的参数名，默认会排除 LN、bias 等
+        # 2) Get parameter names that should use weight decay (excluding LN, bias, etc.).
         decay_parameters = self.get_decay_parameter_names(opt_model)
 
-        # 3. 根据你的需求，对不同层或名字的参数设置不同学习率
-        #   下面是一个示例：若 "name.startswith('model.')" 则组1，否则组2。
-        #   同时还保留 weight decay / no decay 的区分。
+        # 3) Set different learning rates for different parameter groups as needed.
+        #   Example: group 1 if name.startswith("model.") (or "lm_head."), otherwise group 2.
+        #   Also keep the decay vs no_decay split for weight decay.
         param_optimizer = list(opt_model.named_parameters())
 
-        # 3.1 先区分 "model." vs "other" (用于不同 LR)
-        #     再在每组内部区分 "decay" vs "no_decay" (用于 weight_decay)
+        # 3.1 First split into "model." vs "other" (for different LR),
+        #     then within each group split into "decay" vs "no_decay" (for weight_decay).
         group1_decay = {
             "params": [
                 p for n, p in param_optimizer
                 if p.requires_grad and (n in decay_parameters) and (n.startswith("model.") or n.startswith("lm_head."))
             ],
             "weight_decay": self.args.weight_decay,
-            "lr": self.args.learning_rate,  # 例如: 基础学习率
+            "lr": self.args.learning_rate,  # e.g., base learning rate
         }
         group1_no_decay = {
             "params": [
@@ -189,8 +189,8 @@ class LayerTrainer(Trainer):
             group2_no_decay,
         ]
 
-        # 4. 判断是否用户/内部已经指定了 self.optimizer_cls_and_kwargs
-        #    如果没有，就使用默认方法 get_optimizer_cls_and_kwargs
+        # 4) Check whether optimizer_cls_and_kwargs was already specified.
+        #    If not, fall back to get_optimizer_cls_and_kwargs.
         if self.optimizer_cls_and_kwargs is not None:
             optimizer_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
         else:
@@ -198,7 +198,7 @@ class LayerTrainer(Trainer):
         
         logger.warning(f"optimizer_cls: {optimizer_cls}, optimizer_kwargs: {optimizer_kwargs}")
 
-        # 5. 如果 optimizer_kwargs 里带了 "params"/"model"/"optimizer_dict" 字段，会覆盖默认分组
+        # 5) If optimizer_kwargs contains "params"/"model"/"optimizer_dict", it overrides the default grouping.
         if "params" in optimizer_kwargs:
             optimizer_grouped_parameters = optimizer_kwargs.pop("params")
         if "model" in optimizer_kwargs:
@@ -206,10 +206,10 @@ class LayerTrainer(Trainer):
         if "optimizer_dict" in optimizer_kwargs:
             optimizer_grouped_parameters = optimizer_kwargs.pop("optimizer_dict")
 
-        # 6. 构造最终的优化器
+        # 6) Build the final optimizer.
         self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
-        # 7. 如果是 Adam8bit，则保留 bitsandbytes 对 embedding 参数的特殊处理
+        # 7) For Adam8bit, keep bitsandbytes' special handling for embedding parameters.
         if optimizer_cls.__name__ == "Adam8bit":
             manager = bitsandbytes.optim.GlobalOptimManager.get_instance()
             skipped = 0
@@ -221,7 +221,7 @@ class LayerTrainer(Trainer):
                     logger.debug(f"bitsandbytes: will optimize {module} in fp32")
             logger.info(f"skipped: {skipped/2**20}M params")
 
-        # 8. 在 sagemaker mp 环境下，封装成分布式优化器
+        # 8) Under SageMaker MP, wrap as a distributed optimizer.
         if is_sagemaker_mp_enabled():
             import smdistributed.modelparallel.torch as smp
             self.optimizer = smp.DistributedOptimizer(self.optimizer)
@@ -301,7 +301,7 @@ def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, AttackArguments))
 
     # =================================================================
-    # 替换程序参数读取方式
+    # Switch argument parsing mode (supports config file input).
     # model_args, data_args, training_args, attack_args = parser.parse_args_into_dataclasses()
     if os.sys.argv[-1].endswith(('.yml', '.yaml', '.json')):
         # If a config file is provided, parse arguments from the file
@@ -463,7 +463,7 @@ def train():
     smart_tokenizer_and_embedding_resize(special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model)
 
     # =================================================================
-    # 替换 IH 数据构建
+    # Switch IH dataset construction.
     # data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, downsample=training_args.downsample)
     if 'baseline' in model_args.paper_model:
         data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, downsample=training_args.downsample)
