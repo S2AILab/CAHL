@@ -1,0 +1,12 @@
+default:
+    # - api_key: "sk-sLWZ9hfUDltyAJZ88a59F4Ea87Ce482193E30a13BcFdB2Ee"
+      # base_url: "https://api.geekai.pro/v1"
+    # - api_key: "sk-1zOmJFR3LK5s7FNxFf03920cF6F64f64B39dC1B9F6D3483a"
+      # base_url: "https://api.pumpkinaigc.online/v1"
+    - api_key:   "sk-a54e84d8a2e54dceb4e322483c79d399"
+      base_url: "https://api.deepseek.com"
+      # base_url: "https://oai.ppai.pro/v1"
+
+
+gpt-4-1106-preview: # only when using `model_name: gpt-4-1106-preview` which is AlpacaEval2's model name
+    - "default" # this will append all the `default` configs
