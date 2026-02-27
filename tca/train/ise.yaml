@@ -1,0 +1,45 @@
+model_name_or_path: "meta-llama/Llama-3.1-8B"
+model_type: "ise"
+padding_side: "right"
+train_type: "sft"
+ih_size: 3
+ICA_num_attention_heads: 1
+attn_implementation: "flash_attention_2"
+model_max_length: 8192
+wandb_project: "IH"
+chat_template: "./tcb_chat_template_llama3.1_json.jinja"
+
+
+# ----------------------------------------------------------------
+# parameters that are often modified
+data_path: "../data/tcb_train_clean_7k.json"
+output_dir: "../outputs/ise_SpclSpclSpcl_None_clean" # the name format follows the StruQ code, where 'SpclSpclSpcl' means using special delimiter (chat delimiter here), 'None' means using no attack when training, and we replace the datetime with 'clean' to indicate that this is a clean training without attack. When adversarial training is involved, it should be like 'ise_SpclSpclSpcl_NaiveCompletion_adv'
+run_name: "ise_tcb_clean"
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 16
+gradient_accumulation_steps: 128
+gradient_checkpointing: true
+# ----------------------------------------------------------------
+
+
+downsample: true
+lr_scale: true
+eval_strategy: "no"
+dataset_num_proc: 8
+num_train_epochs: 3.0
+learning_rate: 2.0e-6
+weight_decay: 0.
+warmup_ratio: 0.03
+save_strategy: "no"
+save_total_limit: 1
+optim: "adamw_8bit"
+lr_scheduler_type: "cosine"
+logging_first_step: True
+logging_steps: 10
+log_level: "info"
+save_steps: 10000
+fp16: false
+bf16: true
+tf32: true
+data_seed: 3407
+report_to: "wandb"

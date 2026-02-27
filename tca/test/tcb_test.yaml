@@ -1,0 +1,13 @@
+model_name_or_path: ""  # path to model for evaluation
+result_path: "" # path to evaluation results
+model_type: "cahl"  # "struq", "ise", "cahl"
+ih_size: 3  # -1 for struq, 3 for ise and cahl
+attack: ["none"]  # "none", "completion"
+data_path: "../data/tcb_test_benign_388_with_gpt3.5_outputs.json" # '../data/tcb_test_benign_388_with_gpt3.5_outputs.json' for 'none', '../data/tcb_test_chat_adv_372.json' for 'completion'
+chat_template: "../train/tcb_chat_template_llama3.1_json.jinja"
+
+model_max_length: 8192
+attn_implementation: "flash_attention_2"
+cahl_attention_heads: 1
+device: "cuda:0"
+seed: 3047
