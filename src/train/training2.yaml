@@ -1,0 +1,56 @@
+model_name_or_path: "meta-llama/Llama-3.1-8B"
+paper_model: "icaseqQformer"
+delitimer: "delm"
+padding_side: "right"
+train_type: "sft"
+ih_size: 3
+ICA_num_attention_heads: 1
+attn_implementation: "flash_attention_2"
+# add_special_tokens: true
+model_max_length: 512
+wandb_project: "IH"
+
+data_path: "data/alpaca_data_cleaned.json"
+# dataset_batchsize: 128
+
+attack: "SpclSpclSpcl_None"
+
+# ----------------------------------------------------------------
+
+output_dir: "training2"
+run_name: "training2"
+per_device_train_batch_size: 16  # #tokens / L = bs * accum * #gpu
+per_device_eval_batch_size: 16
+gradient_accumulation_steps: 8
+gradient_checkpointing: true
+# packing: true
+# padding: false  # not same as packing usually
+# truncation: true
+# dataset_batched: false  # usually same as padding
+# ----------------------------------------------------------------
+downsample: true
+lr_scale: true
+eval_strategy: "no"
+dataset_num_proc: 8
+# max_seq_length: 512
+num_train_epochs: 3.0
+learning_rate: 2.0e-5
+weight_decay: 0.
+warmup_ratio: 0.03
+save_strategy: "no"
+save_total_limit: 1
+optim: "adamw_8bit"
+lr_scheduler_type: "cosine"
+logging_first_step: True
+logging_steps: 10
+log_level: "info"
+save_steps: 10000
+fp16: false
+bf16: true
+tf32: true
+data_seed: 3407
+# deepspeed: "deepspeed/ds_z3_config.json"
+# use_liger: true
+# fsdp: "full_shard auto_wrap"
+# fsdp_transformer_layer_cls_to_wrap: "LlamaDecoderLayer"
+report_to: "wandb"
