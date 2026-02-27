@@ -342,44 +342,6 @@ def train():
             torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
             attn_implementation=model_args.attn_implementation,
         )
-    elif model_args.paper_model == 'isesinusoidal':
-        model = LlamaIsinSEForCausalLM.load_base_for_train(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'isesinusoidalandlearn':
-        model = LlamaIsinSlearnEForCausalLM.load_base_for_train(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'learnablesinise':
-        model = LlamaLearnableSinISEForCausalLM.load_base_for_train(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'icaformer':
-        model = LlamaICAformerForCausalLM.init_from_pretrained(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            model_args.ICA_num_attention_heads,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'icaformer_adapter':
-        model = LlamaICAAdapterformerForCausalLM.init_from_pretrained(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            model_args.ICA_num_attention_heads,
-            model_args.adapter_dim,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
     elif model_args.paper_model == 'icaseqQformer':
         model = LlamaICAQformerForCausalLM.init_from_pretrained(
             model_args.model_name_or_path,
@@ -404,30 +366,8 @@ def train():
             torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
             attn_implementation=model_args.attn_implementation,
         )
-    elif model_args.paper_model == 'icaseqQformernoise':
-        model = LlamaICAQformerNoiseForCausalLM.init_from_pretrained(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            model_args.ICA_num_attention_heads,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'icaseqQformernoself':
-        model = LlamaICAQformerNoSelfForCausalLM.init_from_pretrained(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            model_args.ICA_num_attention_heads,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
-    elif model_args.paper_model == 'ica':
-        model = LlamaICAForCausalLM.init_from_pretrained(
-            model_args.model_name_or_path,
-            model_args.ih_size,
-            model_args.ICA_num_attention_heads,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            attn_implementation=model_args.attn_implementation,
-        )
+
+
 
     if model_args.window_size > 0:
         model.config.window = model_args.window_size
